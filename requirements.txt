@@ -1,0 +1,11 @@
+# Core (offline path: ingest + search + audit) needs only PyYAML.
+PyYAML>=6.0
+
+# Agent runtime (`kb ask`). Install when you wire up an API key.
+claude-agent-sdk>=0.2.140
+
+# Real embeddings and multi-provider model routing (optional).
+# litellm>=1.40
+
+# Production store (optional).
+# psycopg[binary]>=3.1

@@ -1,0 +1,15 @@
+# Local, zero-setup environment. Runs offline for ingest/search; needs an API
+# key only for `kb ask`.
+credentials_profile: personal      # which account `kb ask` uses here
+
+store:
+  backend: sqlite
+  path: data/kb.sqlite3
+
+embedder:
+  backend: hash                    # deterministic, offline; swap to litellm for real recall
+  dim: 256
+
+observability:
+  backend: sqlite
+  path: data/runs.sqlite3

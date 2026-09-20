@@ -1,0 +1,17 @@
+# Production environment: Postgres + pgvector store, real embeddings, the
+# work account. Everything the code needs is a config change from `local`.
+credentials_profile: work-primary
+
+store:
+  backend: pgvector
+  dsn: ${KB_PG_DSN}                # e.g. postgresql://user:pass@host:5432/kb
+  dim: 1024
+
+embedder:
+  backend: litellm
+  model: voyage/voyage-3
+  dim: 1024
+
+observability:
+  backend: sqlite                  # swap to a langfuse backend when you add one
+  path: data/runs.sqlite3

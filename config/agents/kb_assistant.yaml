@@ -1,0 +1,36 @@
+# A knowledge-base assistant. This whole file IS the agent: change the prompt,
+# the tools, or the model here and the behavior changes. Copy this file, edit
+# the fields, and you have a new agent (e.g. a triage agent, a release-notes
+# agent) with no code change.
+name: kb_assistant
+description: Answers questions from the personal knowledge base and files new knowledge.
+
+model:
+  primary: claude-sonnet-4-5      # swap to any model; add a gateway for non-Claude
+  fallback: claude-haiku-4-5
+
+prompt:
+  system_ref: prompts/kb_assistant.v1.md
+  version: 1                       # bump when you change the prompt; runs are tagged with it
+
+# Which KB tools this agent may use. Omit or leave empty to allow all of them.
+tools: [search, get, write_note, link]
+
+retrieval:
+  top_k: 8
+  types: []                        # restrict to e.g. [bug, release] for a focused agent
+
+policy:
+  max_iterations: 8                # Agent SDK max_turns
+  max_budget_usd: 0.50             # hard stop per run
+  permission_mode: default
+
+# Typed contract -> makes this agent callable as a node in a multi-agent system.
+io_contract:
+  input:
+    prompt: string
+  output:
+    answer: string
+    cited_ids: string[]
+
+environment: local

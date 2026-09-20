@@ -1,0 +1,5 @@
+config/credentials.yaml
+data/*.sqlite3
+__pycache__/
+*.pyc
+.venv/
