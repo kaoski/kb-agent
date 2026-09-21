@@ -90,6 +90,7 @@ class Credentials:
 # --------------------------------------------------------------------------- #
 # Environment
 # --------------------------------------------------------------------------- #
+
 @dataclass
 class Environment:
     """Where an agent runs: which store backs it, which account bills it."""
@@ -99,6 +100,9 @@ class Environment:
     store: dict[str, Any] = field(default_factory=lambda: {"backend": "sqlite"})
     embedder: dict[str, Any] = field(default_factory=lambda: {"backend": "hash"})
     observability: dict[str, Any] = field(default_factory=lambda: {"backend": "sqlite"})
+    # Optional domain-connector endpoints (ServiceNow). When
+    # present, the runtime exposes the connector tools to the agent.
+    connectors: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def load(cls, name: str) -> "Environment":

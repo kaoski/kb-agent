@@ -1,7 +1,7 @@
 """The generic agent runtime.
 
 Reads an AgentSpec + its Environment, wires the KB tools and the selected
-account's credentials into ClaudeAgentOptions, runs the Agent SDK loop, and
+account's credentials into ClaudeCodeOptions, runs the Agent SDK loop, and
 records tokens/iterations/cost from the final ResultMessage. One runtime,
 customized entirely by config: prompt, tools, model, and account are all
 fields.
@@ -18,7 +18,17 @@ from .config import AgentSpec, Credentials, Environment
 from .embeddings import build_embedder
 from .observability import RunRecord, RunRecorder
 from .store import build_store
-from .tools import build_kb_server
+from .tools import build_kb_server, build_imc_server, build_cmdb_server
+
+
+
+# Registry: tool-name prefix -> builder function.
+# Only servers whose prefix appears in the agent spec's tools list are mounted.
+_SERVER_REGISTRY = {
+    "mcp__kb__":   ("kb",   build_kb_server),
+    "mcp__imc__":  ("imc",  build_imc_server),
+    "mcp__cmdb__": ("cmdb", build_cmdb_server),
+}
 
 
 class Agent:
@@ -33,30 +43,49 @@ class Agent:
             path=self.env.observability.get("path", "data/runs.sqlite3"))
 
     def _options(self):
-        from claude_agent_sdk import ClaudeAgentOptions
+        from claude_code_sdk import ClaudeCodeOptions
 
-        server, kb_tool_names = build_kb_server(self.store, self.embedder)
-        # An agent may narrow the KB tools it uses via its spec; default to all.
-        allowed = [t for t in kb_tool_names
-                   if not self.spec.tools or _short(t) in self.spec.tools] or kb_tool_names
+        servers: dict = {}
+        tool_names: list[str] = []
 
-        return ClaudeAgentOptions(
+        # Mount only the servers whose prefix appears in spec.tools.
+        # If spec.tools is empty, fall back to mounting all KB tools.
+        spec_tools = self.spec.tools or []
+        for prefix, (server_name, builder) in _SERVER_REGISTRY.items():
+            if not spec_tools or any(t.startswith(prefix) for t in spec_tools):
+                srv, names = builder(self.store, self.embedder)
+                servers[server_name] = srv
+                tool_names += names
+
+        # Connector tools (ServiceNow, Engine) — added when the environment
+        # declares endpoints and the spec requests them.
+        if self.env.connectors and any(
+            t.startswith("mcp__snow__") for t in spec_tools
+        ):
+            from .connectors import build_connector_server
+            conn_server, conn_names = build_connector_server(self.env.connectors)
+            servers["snow"] = conn_server
+            tool_names += conn_names
+
+        # Filter to only what the spec explicitly allows.
+        allowed = (
+            [t for t in tool_names if t in spec_tools]
+            if spec_tools else tool_names
+        )
+
+        ClaudeCodeOptions(
             system_prompt=self.spec.prompt.text(),
             model=self.spec.model.primary,
-            fallback_model=self.spec.model.fallback,
-            mcp_servers={"kb": server},
+            mcp_servers=servers,
             allowed_tools=allowed,
             max_turns=self.spec.policy.max_iterations,
-            max_budget_usd=self.spec.policy.max_budget_usd,
             permission_mode=self.spec.policy.permission_mode,
-            # Account selection: the profile's key/workspace/base-url override
-            # the SDK subprocess environment for this run only.
             env=self.creds.as_env(),
         )
 
     async def run(self, prompt: str) -> dict:
         """Run one task. Returns the result text plus the audit record."""
-        from claude_agent_sdk import query, AssistantMessage, TextBlock, ResultMessage
+        from claude_code_sdk import query, AssistantMessage, TextBlock, ResultMessage
 
         options = self._options()
         started = time.time()
@@ -73,7 +102,6 @@ class Agent:
                     if isinstance(block, TextBlock):
                         text_out.append(block.text)
             elif isinstance(message, ResultMessage):
-                # The audit numbers come off the terminal ResultMessage.
                 usage = getattr(message, "usage", None) or {}
                 rec.input_tokens = _u(usage, "input_tokens")
                 rec.output_tokens = _u(usage, "output_tokens")
@@ -89,7 +117,6 @@ class Agent:
 
 
 def _short(qualified: str) -> str:
-    # mcp__kb__search -> search
     return qualified.split("__")[-1]
 
 

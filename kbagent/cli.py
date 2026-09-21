@@ -1,11 +1,12 @@
 """Command-line entry point.
 
-  kb add        -- capture a daily note (the daily-input habit)
-  kb ingest-file -- ingest a text/markdown file as one item
-  kb search     -- retrieve from the KB (no LLM, offline)
-  kb ask        -- run an agent against the KB (needs an API key)
-  kb runs       -- show the token/iteration audit
-  kb export     -- export an agent spec so it can be cloned
+  kb add             -- capture a daily note (the daily-input habit)
+  kb ingest-file     -- ingest a text/markdown file as one item
+  kb ingest-codebase -- ingest a codebase dump (START/END block format)
+  kb search          -- retrieve from the KB (no LLM, offline)
+  kb ask             -- run an agent against the KB (needs an API key)
+  kb runs            -- show the token/iteration audit
+  kb export          -- export an agent spec so it can be cloned
 """
 from __future__ import annotations
 
@@ -47,6 +48,17 @@ def cmd_ingest_file(args):
     print(f"Ingested {path} -> id={item.id}")
 
 
+def cmd_ingest_codebase(args):
+    store, embedder = _store_and_embedder(args.env)
+    path = Path(args.path)
+    text = path.read_text()
+    source_label = args.source or path.stem
+    items = Ingestor(store, embedder).ingest_codebase_dump(text, source_label)
+    print(f"Ingested {len(items)} files from {path}")
+    for it in items:
+        print(f"  [{it.type.value}] {it.title}  id={it.id}")
+
+
 def cmd_search(args):
     store, embedder = _store_and_embedder(args.env)
     emb = embedder.embed(args.query)
@@ -64,12 +76,16 @@ def cmd_search(args):
 def cmd_ask(args):
     from .runtime import Agent
     spec = AgentSpec.load(args.agent)
+    if args.prompt_ref:
+        spec.prompt.system_ref = args.prompt_ref
+        spec.prompt.inline = None
     agent = Agent(spec)
-    out = asyncio.run(agent.run(args.prompt))
+    out = asyncio.run(agent.run(args.query))
     print(out["result"])
     r = out["run"]
     print(f"\n--- {r.iterations} iters | {r.total_tokens} tokens "
-          f"| ${r.cost_usd:.4f} | {r.duration_s:.1f}s | {r.outcome} ---", file=sys.stderr)
+          f"| ${r.cost_usd:.4f} | {r.duration_s:.1f}s | {r.outcome} ---",
+          file=sys.stderr)
 
 
 def cmd_runs(args):
@@ -104,6 +120,13 @@ def main(argv=None):
     a.add_argument("--tags", default="")
     a.set_defaults(func=cmd_add)
 
+    c = sub.add_parser("ingest-codebase",
+                       help="ingest a codebase dump (START/END block format)")
+    c.add_argument("path", help="path to the txt dump file")
+    c.add_argument("--source", default="",
+                   help="label stored as source (default: filename stem)")
+    c.set_defaults(func=cmd_ingest_codebase)
+
     f = sub.add_parser("ingest-file")
     f.add_argument("path")
     f.add_argument("--title", default="")
@@ -118,13 +141,16 @@ def main(argv=None):
 
     k = sub.add_parser("ask", help="run an agent against the KB")
     k.add_argument("agent")
-    k.add_argument("prompt")
+    k.add_argument("query")
+    k.add_argument("--prompt", dest="prompt_ref", default=None,
+                   help="override prompt file, e.g. prompts/imc/debug.v1.md")
     k.set_defaults(func=cmd_ask)
 
     r = sub.add_parser("runs", help="token/iteration audit")
     r.add_argument("--agent", default=None)
     r.add_argument("--limit", type=int, default=20)
-    r.add_argument("--stats", action="store_true", help="per-prompt-version averages")
+    r.add_argument("--stats", action="store_true",
+                   help="per-prompt-version averages")
     r.set_defaults(func=cmd_runs)
 
     e = sub.add_parser("export", help="export an agent spec for cloning")

@@ -1,0 +1,28 @@
+name: cmdb-agent
+description: Develops, debugs, and certifies the CMDB Connector.
+
+model:
+  primary: claude-sonnet-4-5
+  fallback: claude-haiku-4-5
+
+prompt:
+  system_ref: prompts/cmdb.v1.md
+  version: 1
+
+tools:
+  - mcp__cmdb__search_cmdb
+  - mcp__cmdb__get_cmdb
+
+policy:
+  max_iterations: 12
+  max_budget_usd: 0.5
+  permission_mode: default
+
+io_contract:
+  input:
+    task: string
+  output:
+    answer: string
+    cited_ids: string[]
+
+environment: work

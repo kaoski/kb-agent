@@ -1,0 +1,28 @@
+name: imc-agent
+description: Develops, debugs, and certifies the IMC Connector.
+
+model:
+  primary: claude-sonnet-4-5
+  fallback: claude-haiku-4-5
+
+prompt:
+  system_ref: prompts/imc/code-search.v1.md
+  version: 1
+
+tools:
+  - mcp__imc__search_imc
+  - mcp__imc__get_imc
+
+policy:
+  max_iterations: 12
+  max_budget_usd: 0.5
+  permission_mode: default
+
+io_contract:
+  input:
+    task: string
+  output:
+    answer: string
+    cited_ids: string[]
+
+environment: work

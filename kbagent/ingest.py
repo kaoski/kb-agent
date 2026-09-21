@@ -1,20 +1,13 @@
-"""Ingestion pipeline: source -> normalize -> enrich -> embed -> store + link.
-
-Manual capture (the daily habit) and automatic pulls (ServiceNow, git) both
-land here as KnowledgeItems. The enrich step is where an LLM would extract
-entities, tags, a summary, and candidate links; it is pluggable and defaults
-to a cheap heuristic so the pipeline runs offline.
-"""
+"""Ingestion pipeline: source -> normalize -> enrich -> embed -> store + link."""
 from __future__ import annotations
 
 import re
 from typing import Callable
 
 from .embeddings import Embedder
-from .schema import KnowledgeItem, Link
+from .schema import ItemType, KnowledgeItem, Link  # <-- added ItemType
 from .store.base import KnowledgeStore
 
-# An enricher takes a raw item and returns it with summary/tags/entities filled.
 Enricher = Callable[[KnowledgeItem], KnowledgeItem]
 
 _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "is",
@@ -23,8 +16,6 @@ _STOP = {"the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "is",
 
 
 def heuristic_enricher(item: KnowledgeItem) -> KnowledgeItem:
-    """No-LLM fallback: first sentence as summary, capitalized tokens as
-    entities, frequent words as tags. Swap for an LLM enricher in production."""
     if not item.summary:
         first = re.split(r"(?<=[.!?])\s", item.body.strip(), maxsplit=1)[0]
         item.summary = first[:200]
@@ -56,3 +47,29 @@ class Ingestor:
 
     def ingest_many(self, items: list[KnowledgeItem]) -> list[KnowledgeItem]:
         return [self.ingest(i) for i in items]
+
+    def ingest_codebase_dump(self, text: str, source_label: str) -> list[KnowledgeItem]:
+        """Parse a codebase dump in the format:
+            ########START {file_absolute_path}#############
+            {file_content}
+            ########END {file_absolute_path}###############
+        Each file becomes a separate KnowledgeItem of type 'code'.
+        """
+        import re as _re
+        pattern = _re.compile(
+            r"#{8}START (.+?)#{3,}\n(.*?)#{8}END \1#{3,}",
+            _re.DOTALL,
+        )
+        items = []
+        for m in pattern.finditer(text):
+            file_path = m.group(1).strip()
+            content = m.group(2)
+            item = KnowledgeItem(
+                type=ItemType("code"),
+                title=file_path,
+                body=content,
+                source=source_label,
+                external_id=file_path,
+            )
+            items.append(self.ingest(item))
+        return items
